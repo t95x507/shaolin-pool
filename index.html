@@ -168,12 +168,12 @@ html,body{height:100%;overflow:hidden;background:var(--ink);color:var(--text);fo
       <h1>Убойный <em>бильярд</em></h1>
       <p class="tag">Бильярд, где шар — это оружие, а стол — расходник. Играй против Гены Кия, чемпиона подвала, или позови друга по ссылке.</p>
       <ul class="rules">
-        <li>Красные против синих. Уничтожь все шары соперника раньше, чем он твои. Создатель комнаты играет красными и бьёт первым.</li>
+        <li>Красные против синих. Уничтожь все шары соперника раньше, чем он твои. Кто разбивает пирамиду, решает жребий.</li>
         <li>Шар можно забить в лузу, выбить со стола или разбить: у каждого шара есть здоровье, сильный удар бьёт больно.</li>
         <li>Урон по врагу копит ярость. Ярость тратится на приёмы: огненный шар, молнию, чугунное ядро, чёрную дыру и Удар Дракона. Ярость копится от урона и тратится на приёмы.</li>
-        <li>Против Гены — классика: шары хрупкие, ярость копится быстро. По сети партия длиннее: у шаров и бортов больше здоровья, ярость копится медленнее, а Удар Дракона просыпается только с четвёртого хода.</li>
+        <li>Удар Дракона просыпается только с четвёртого хода. Против Гены — классика: шары хрупкие, всё решается быстро. По сети партия длиннее: у шаров и бортов больше здоровья, ярость копится медленнее.</li>
         <li>Борта ломаются. Взрывы оставляют в сукне дыры, туда тоже всё падает. Чёрный шар с черепом — бомба.</li>
-        <li>Уничтожил вражеский шар — бьёшь ещё раз (по сети — не больше одного раза подряд).</li>
+        <li>Уничтожил вражеский шар — бьёшь ещё раз: против Гены до двух раз подряд, по сети один.</li>
       </ul>
       <p class="controls">Наведи мышью, зажми кнопку и отпусти на нужной силе. Клавиши <kbd>1</kbd>–<kbd>5</kbd> выбирают приём, <kbd>←</kbd><kbd>→</kbd> доводят прицел. На телефоне: коснись стола, чтобы прицелиться, удерживай палец для силы.</p>
       <div class="modes">
@@ -237,7 +237,7 @@ const SK = Object.fromEntries(SKILLS.map(s => [s.id, s]));
 
 // Balance: "classic" for games against Gena, "long" for network games.
 const BALANCE = {
-  classic: { ballHp: 120, bombHp: 60, railHp: 100, deathCrater: 0.3, maxHoles: 9, extraCap: Infinity, rageHurt: 0.1, rageDmg: 0.3, rageKill: 15, rageTurn: 8, dragonTurns: 0,
+  classic: { ballHp: 120, bombHp: 60, railHp: 100, deathCrater: 0.3, maxHoles: 9, extraCap: 2, rageHurt: 0.05, rageDmg: 0.2, rageKill: 12, rageTurn: 5, dragonTurns: 3,
              costs: { fire: 30, zap: 35, iron: 40, hole: 55, dragon: 100 } },
   long:    { ballHp: 300, bombHp: 100, railHp: 300, deathCrater: 0.1, maxHoles: 5, extraCap: 1, rageHurt: 0.04, rageDmg: 0.15, rageKill: 12, rageTurn: 6, dragonTurns: 3,
              costs: { fire: 35, zap: 45, iron: 55, hole: 70, dragon: 100 } },
@@ -866,11 +866,12 @@ function newGame() {
     const t = teams[idx++]; makeBall(t, String(t === 0 ? n0++ : n1++), x, z);
   }
   makeBall(2, '', rnd(-1.5, 1.5), (Math.random() < 0.5 ? -1 : 1)*(H/2 - 1.6));
-  energy = [20, 25]; current = 0; streak = 0; turnsTaken = [0, 0]; selected = null; power = 0; charging = false; shot = null; shotFx = {};
+  energy = [20, 20]; current = Math.random() < 0.5 ? 0 : 1; streak = 0; turnsTaken = [0, 0]; selected = null; power = 0; charging = false; shot = null; shotFx = {};
   stats = { shots: [0, 0], smashed: 0, rails: 0, craters: 0, pocketed: 0, bombs: 0 };
   aimAngle = 0; renderPips();
 }
 function startTurn() {
+  if (turnsTaken[0] + turnsTaken[1] === 0) { net.depth++; announceBreak(); net.depth--; }
   turnsTaken[current]++;
   state = 'aim'; power = 0; charging = false; selected = null; net.remoteSel = null; net.pendingShot = false;
   if (mode === 'solo' && current === 1) {
@@ -881,6 +882,9 @@ function startTurn() {
     if (mode === 'solo' && hintShown < 1) { announce('ТВОЙ УДАР', 'small'); hintShown++; }
     if (current === myTeam) autoAim();
   }
+}
+function announceBreak() {
+  announce(current === myTeam ? 'ЖРЕБИЙ: ТЫ РАЗБИВАЕШЬ' : mode === 'solo' ? 'ЖРЕБИЙ: РАЗБИВАЕТ ГЕНА' : 'ЖРЕБИЙ: РАЗБИВАЕТ ДРУГ', current === myTeam ? 'small' : 'bad small');
 }
 function autoAim() {
   const p = predict(aimAngle); if (p.hit) return;
@@ -1304,6 +1308,7 @@ function applyFull(m) {
   m.segs.forEach((hp, i) => { if (hp <= 0) { segs[i].alive = false; segs[i].g.visible = false; } else segTint(i, hp); });
   for (const h of m.holes) makeCrater(h[0], h[1], h[2], 99);
   energy = m.energy; current = m.current; turnsTaken = m.turnsTaken; state = m.state;
+  if (turnsTaken[0] + turnsTaken[1] === 1) announceBreak();
   net.started = true; net.pendingShot = false; selected = null;
   setNames(); renderPips();
   $('start').hidden = true; $('over').hidden = true; $('bubble').hidden = true;
