@@ -170,9 +170,10 @@ html,body{height:100%;overflow:hidden;background:var(--ink);color:var(--text);fo
       <ul class="rules">
         <li>Красные против синих. Уничтожь все шары соперника раньше, чем он твои. Создатель комнаты играет красными и бьёт первым.</li>
         <li>Шар можно забить в лузу, выбить со стола или разбить: у каждого шара есть здоровье, сильный удар бьёт больно.</li>
-        <li>Урон по врагу копит ярость. Ярость тратится на приёмы: огненный шар, молнию, чугунное ядро, чёрную дыру и Удар Дракона. Ярость копится медленно, а Удар Дракона просыпается только с твоего четвёртого хода.</li>
+        <li>Урон по врагу копит ярость. Ярость тратится на приёмы: огненный шар, молнию, чугунное ядро, чёрную дыру и Удар Дракона. Ярость копится от урона и тратится на приёмы.</li>
+        <li>Против Гены — классика: шары хрупкие, ярость копится быстро. По сети партия длиннее: у шаров и бортов больше здоровья, ярость копится медленнее, а Удар Дракона просыпается только с четвёртого хода.</li>
         <li>Борта ломаются. Взрывы оставляют в сукне дыры, туда тоже всё падает. Чёрный шар с черепом — бомба.</li>
-        <li>Уничтожил вражеский шар — получаешь ещё один удар, но только один раз подряд.</li>
+        <li>Уничтожил вражеский шар — бьёшь ещё раз (по сети — не больше одного раза подряд).</li>
       </ul>
       <p class="controls">Наведи мышью, зажми кнопку и отпусти на нужной силе. Клавиши <kbd>1</kbd>–<kbd>5</kbd> выбирают приём, <kbd>←</kbd><kbd>→</kbd> доводят прицел. На телефоне: коснись стола, чтобы прицелиться, удерживай палец для силы.</p>
       <div class="modes">
@@ -233,6 +234,20 @@ const SKILLS = [
   { id:'dragon', ic:'🐉', name:'Удар Дракона',   cost:100, col:'#ffd23f', hex:0xffd23f },
 ];
 const SK = Object.fromEntries(SKILLS.map(s => [s.id, s]));
+
+// Balance: "classic" for games against Gena, "long" for network games.
+const BALANCE = {
+  classic: { ballHp: 120, bombHp: 60, railHp: 100, deathCrater: 0.3, maxHoles: 9, extraCap: Infinity, rageHurt: 0.1, rageDmg: 0.3, rageKill: 15, rageTurn: 8, dragonTurns: 0,
+             costs: { fire: 30, zap: 35, iron: 40, hole: 55, dragon: 100 } },
+  long:    { ballHp: 300, bombHp: 100, railHp: 300, deathCrater: 0.1, maxHoles: 5, extraCap: 1, rageHurt: 0.04, rageDmg: 0.15, rageKill: 12, rageTurn: 6, dragonTurns: 3,
+             costs: { fire: 35, zap: 45, iron: 55, hole: 70, dragon: 100 } },
+};
+let BAL = BALANCE.classic;
+function setBalance(name) {
+  BAL = BALANCE[name];
+  for (const s of SKILLS) s.cost = BAL.costs[s.id];
+  for (const s of SKILLS) { const el = document.getElementById('ct-' + s.id); if (el) el.textContent = s.cost + ' ярости'; }
+}
 
 const BOT_TAUNT = ['Щас как дам!','Смотри и учись, салага.','Кий заряжен.','Это будет больно. Шарам.','Я в бильярд с детского сада играю.','Сейчас будет красиво.','Шары, не бойтесь, это быстро.'];
 const BOT_HURT  = ['Ай! Мой шарик!','Это был мой любимый!','Нечестно!','Я так не играю...','Ты чего творишь?!','Мама, он шары ломает!','Это я тебе запомню.'];
@@ -412,7 +427,7 @@ function makeSeg(ax, az, bx, bz, nx, nz) {
   const wood = new THREE.Mesh(new THREE.BoxGeometry(L, 0.9, 0.8), woodMat); wood.position.set(0, 0.05, sgn*0.74); wood.castShadow = true; wood.receiveShadow = true;
   const inlay = new THREE.Mesh(new THREE.BoxGeometry(L*0.3, 0.02, 0.08), new THREE.MeshStandardMaterial({ color: 0xd8b56a, metalness: .5, roughness: .4 })); inlay.position.set(0, 0.51, sgn*0.74);
   g.add(cush, wood, inlay); tableGroup.add(g);
-  segs.push({ ax, az, bx, bz, nx, nz, l2: L*L, L, hp: 300, alive: true, g, woodMat, cushMat, sgn, a });
+  segs.push({ ax, az, bx, bz, nx, nz, l2: L*L, L, hp: BAL.railHp, alive: true, g, woodMat, cushMat, sgn, a });
 }
 function segDist(s, x, z) {
   const ex = s.bx - s.ax, ez = s.bz - s.az; let t = ((x - s.ax)*ex + (z - s.az)*ez)/s.l2; t = clamp(t, 0, 1);
@@ -437,7 +452,7 @@ function makeBall(team, label, x, z) {
   const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.22, metalness: 0.05 });
   const mesh = new THREE.Mesh(ballGeo, mat); mesh.castShadow = true; mesh.position.set(x, BY, z);
   mesh.rotation.set(rnd(0, 6), rnd(0, 6), rnd(0, 6)); scene.add(mesh);
-  const maxhp = team === 2 ? 100 : 300;
+  const maxhp = team === 2 ? BAL.bombHp : BAL.ballHp;
   const b = { team, label, x, z, vx: 0, vz: 0, r: R, m: 1, hp: maxhp, maxhp, state: 'table', alive: true, mesh, mat, ctx: c.getContext('2d'), tex, cracks: 0, flash: 0, y: BY, vy: 0, t: 0, pop: 1 };
   if (team !== -1) {
     const el = document.createElement('div'); el.className = 'hp'; el.style.setProperty('--c', team === 2 ? '#ff7a1a' : TEAM_COL[team]);
@@ -566,7 +581,7 @@ function applyDamage(b, amt) {
   const lvl = b.hp <= b.maxhp*0.25 ? 3 : b.hp <= b.maxhp*0.5 ? 2 : b.hp <= b.maxhp*0.75 ? 1 : 0;
   while (b.cracks < lvl) { b.cracks++; crackBall(b); }
   if (shot) { if (b.team === 1 - shot.shooter) shot.dmgEnemy += amt; else if (b.team === shot.shooter) shot.dmgOwn += amt; }
-  if (b.team === 0 || b.team === 1) energy[b.team] = Math.min(100, energy[b.team] + amt*0.04);
+  if (b.team === 0 || b.team === 1) energy[b.team] = Math.min(100, energy[b.team] + amt*BAL.rageHurt);
   if (b.hp <= 0) { b.dying = true; timers.push({ t: rnd(0.06, 0.14), fn: () => killBoom(b) }); }
 }
 function shardsFx(x, z, team) {
@@ -582,7 +597,7 @@ function killBoom(b) {
     explode(b.x, b.z, { R: 3.6, dmg: 48, imp: 20, crater: 1.0, size: 2.2 }); announce('БАБАХ!!!'); slowmo(0.25, 0.7);
   } else {
     stats.smashed++;
-    explode(b.x, b.z, { R: 1.8, dmg: 14, imp: 9, crater: Math.random() < 0.1 ? 0.6 : 0, size: 1 });
+    explode(b.x, b.z, { R: 1.8, dmg: 14, imp: 9, crater: Math.random() < BAL.deathCrater ? 0.6 : 0, size: 1 });
     announce(pick(SMASH), b.team === current ? 'bad' : '');
     onKill(b);
   }
@@ -637,7 +652,7 @@ function damageSeg(s, dmg, px, pz) {
   return false;
 }
 function segTint(i, hp) {
-  const s = segs[i]; if (!s) return; s.hp = hp; const f = clamp(1 - hp/300, 0, 1);
+  const s = segs[i]; if (!s) return; s.hp = hp; const f = clamp(1 - hp/BAL.railHp, 0, 1);
   s.woodMat.color.setHex(woodBase).lerp(new THREE.Color(0x150a05), f*0.8);
   s.cushMat.color.setHex(cushBase).lerp(new THREE.Color(0x050505), f*0.7);
   s.g.position.y = rnd(-0.03, 0.03)*f;
@@ -657,7 +672,7 @@ function segBreakFx(i) {
   SFX.crack(); addShake(0.45); announce('БОРТ В ЩЕПКИ!', 'small');
 }
 function addCrater(x, z, r) {
-  if (holes.length >= 5) return;
+  if (holes.length >= BAL.maxHoles) return;
   for (const p of POCKETS) if (Math.hypot(p[0] - x, p[1] - z) < 1) return;
   makeCrater(x, z, r, 0); stats.craters++;
   for (let k = 0; k < 8; k++) addDebris(new THREE.Mesh(chunkGeo, new THREE.MeshStandardMaterial({ color: Math.random() < .5 ? 0x0d5a47 : 0x3a1f0f })), x, 0.1, z, rnd(-6, 6), rnd(4, 9), rnd(-6, 6), 0.5);
@@ -760,8 +775,7 @@ function buildSkills() {
     b.addEventListener('click', () => toggleSkill(s.id)); box.appendChild(b);
   });
 }
-const DRAGON_TURNS = 3;
-function dragonLeft(t) { return Math.max(0, DRAGON_TURNS + 1 - turnsTaken[t]); }
+function dragonLeft(t) { return BAL.dragonTurns ? Math.max(0, BAL.dragonTurns + 1 - turnsTaken[t]) : 0; }
 function toggleSkill(id) {
   if (!myAim() || energy[myTeam] < SK[id].cost) return;
   if (id === 'dragon' && dragonLeft(myTeam) > 0) { announce('ДРАКОН ЕЩЁ СПИТ', 'small'); return; }
@@ -914,16 +928,16 @@ function respawnCue() {
 function endTurn() {
   const c = cueBall; c.r = R; c.m = 1; c.pierce = false; c.pierceSet = null; c.mesh.material = c.mat; c.mesh.scale.setScalar(1);
   const shooter = shot.shooter;
-  energy[shooter] += shot.dmgEnemy*0.15 + shot.kills*12;
+  energy[shooter] += shot.dmgEnemy*BAL.rageDmg + shot.kills*BAL.rageKill;
   if (c.state !== 'table') respawnCue();
   const alive = t => balls.filter(b => b.team === t && b.alive).length;
   const a0 = alive(0), a1 = alive(1);
   if (a0 === 0 || a1 === 0) { gameOver(a0 === 0 && a1 === 0 ? -1 : a1 === 0 ? 0 : 1); return; }
   if (!shot.hitAny && !shot.cueLost) { if (shooter === 0) botSay(pick(BOT_MISS)); announce('МИМО', 'bad small'); }
-  const extra = shot.kills > 0 && !shot.cueLost && streak < 1;
+  const extra = shot.kills > 0 && !shot.cueLost && streak < BAL.extraCap;
   streak = extra ? streak + 1 : 0;
   if (extra) announce('ЕЩЁ УДАР!', 'small'); else current = 1 - current;
-  energy[current] += 6;
+  energy[current] += BAL.rageTurn;
   startTurn();
 }
 function gameOver(winner) {
@@ -969,25 +983,20 @@ function simShot(base, a, p) {
 function aiPlan() {
   const base = balls.filter(b => b.state === 'table' && !b.dying);
   const c = cueBall, cands = [];
-  // Gena only looks at a couple of targets and never checks every option
-  const targets = base.filter(t => t.team === 0 || t.team === 2).sort(() => Math.random() - 0.5).slice(0, 2);
-  for (const t of targets) {
+  for (const t of base) {
+    if (t.team !== 0 && t.team !== 2) continue;
     const dx = t.x - c.x, dz = t.z - c.z, d = Math.hypot(dx, dz) || 1, a0 = Math.atan2(dz, dx);
-    for (const off of [-0.5, 0, 0.5]) for (const p of [0.6, 0.9]) cands.push([a0 + off*2*R/d, p]);
+    for (const off of [-0.7, -0.35, 0, 0.35, 0.7]) for (const p of [0.55, 0.8, 1]) cands.push([a0 + off*2*R/d, p]);
   }
-  for (let i = 0; i < 4; i++) cands.push([rnd(0, Math.PI*2), rnd(0.5, 1)]);
-  let pickC;
-  if (Math.random() < 0.2) { pickC = pick(cands); botSay(pick(['Ща, по наитию...', 'Закрою глаза для красоты.', 'Интуиция!'])); }
-  else {
-    const scored = cands.map(cd => [simShot(base, cd[0], cd[1]) + rnd(0, 40), cd]).sort((a, b) => b[0] - a[0]);
-    pickC = scored[Math.floor(Math.random()*Math.max(1, Math.ceil(scored.length*0.4)))][1];
-  }
-  return { angle: pickC[0] + rnd(-0.07, 0.07), power: clamp(pickC[1] + rnd(-0.15, 0.1), 0.35, 1) };
+  for (let i = 0; i < 14; i++) cands.push([rnd(0, Math.PI*2), rnd(0.5, 1)]);
+  let best = cands[0] || [0, 0.8], bs = -1e9;
+  for (const cd of cands) { const s = simShot(base, cd[0], cd[1]) + rnd(0, 35); if (s > bs) { bs = s; best = cd; } }
+  return { angle: best[0] + rnd(-0.03, 0.03), power: best[1] };
 }
 function aiChooseSkill() {
   const aff = SKILLS.filter(s => energy[1] >= s.cost && (s.id !== 'dragon' || dragonLeft(1) === 0));
-  if (aff.some(s => s.id === 'dragon') && Math.random() < 0.35) return 'dragon';
-  if (aff.length && Math.random() < 0.3) return pick(aff).id;
+  if (aff.some(s => s.id === 'dragon') && Math.random() < 0.7) return 'dragon';
+  if (aff.length && Math.random() < 0.55) return pick(aff).id;
   return null;
 }
 function angDiff(a, b) { let d = b - a; while (d > Math.PI) d -= Math.PI*2; while (d < -Math.PI) d += Math.PI*2; return d; }
@@ -1040,7 +1049,7 @@ addEventListener('keydown', e => {
 });
 addEventListener('keyup', e => { keys[e.code] = false; if (e.code === 'Space') release(); });
 
-$('go').addEventListener('click', () => { initAudio(); resetNet(); setNames(); $('start').hidden = true; newGame(); startTurn(); });
+$('go').addEventListener('click', () => { initAudio(); resetNet(); setBalance('classic'); setNames(); $('start').hidden = true; newGame(); startTurn(); });
 $('again').addEventListener('click', () => {
   if (net.lost) { location.href = location.pathname; return; }
   if (mode === 'guest') { net.send({ t: 'rematch' }); $('again').disabled = true; $('again').textContent = 'ЖДЁМ ДРУГА…'; return; }
@@ -1241,6 +1250,7 @@ function frame(now) {
 // The host runs all physics and game rules. The guest only renders: it receives
 // state snapshots ~30 times a second plus one-off visual/sound events, and sends
 // back its aim and shot when it is the guest's turn.
+const MP_ENABLED = true;
 let mode = 'solo', myTeam = 0, FX = {};
 const net = { peer: null, conn: null, depth: 0, snapT: 0, aimT: 0, remoteSel: null, pendingShot: false, pendingT: 0, vfx: null, lost: false, started: false, lastSnap: 0, lastSent: {} };
 net.send = m => { if (net.conn && net.conn.open) { try { net.conn.send(m); } catch (_) {} } };
@@ -1342,6 +1352,7 @@ function setNames() {
 }
 function netStatus(text, bad) { const el = $('net-status'); el.textContent = text; el.classList.toggle('bad', !!bad); }
 function resetNet() {
+  setBalance('classic');
   try { if (net.peer) net.peer.destroy(); } catch (_) {}
   net.peer = null; net.conn = null; net.started = false; net.lost = false; mode = 'solo'; myTeam = 0;
 }
@@ -1357,7 +1368,7 @@ function lostConn() {
 function genCode() { const a = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 5; i++) s += a[Math.floor(Math.random()*a.length)]; return s; }
 function hostRoom() {
   if (!peerOk()) return;
-  resetNet(); mode = 'host'; myTeam = 0; initAudio();
+  resetNet(); mode = 'host'; myTeam = 0; setBalance('long'); initAudio();
   const code = genCode(); $('room-code').textContent = code; $('room-link').value = ''; $('lobby').hidden = false;
   netStatus('Создаём комнату…');
   const peer = new Peer(ROOM_PREFIX + code, { debug: 1 }); net.peer = peer;
@@ -1379,7 +1390,7 @@ function joinRoom(raw) {
   if (!peerOk()) return;
   const code = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (code.length < 4) { netStatus('Введи код комнаты из ссылки друга.', true); return; }
-  resetNet(); mode = 'guest'; myTeam = 1; initAudio(); $('lobby').hidden = true;
+  resetNet(); mode = 'guest'; myTeam = 1; setBalance('long'); initAudio(); $('lobby').hidden = true;
   netStatus('Подключаемся к комнате ' + code + '…');
   const peer = new Peer({ debug: 1 }); net.peer = peer;
   peer.on('open', () => {
@@ -1401,6 +1412,7 @@ function startMatch() {
 function rematch() {
   $('over').hidden = true; newGame(); startTurn(); net.send(fullState());
 }
+if (!MP_ENABLED) { $('host').hidden = true; $('joinbox').hidden = true; }
 $('host').addEventListener('click', hostRoom);
 $('join').addEventListener('click', () => joinRoom($('join-code').value));
 $('join-code').addEventListener('keydown', e => { if (e.key === 'Enter') joinRoom($('join-code').value); e.stopPropagation(); });
@@ -1416,6 +1428,7 @@ $('copy').addEventListener('click', () => {
 
 installNet();
 buildSkills();
+setBalance('classic');
 newGame();
 state = 'menu';
 requestAnimationFrame(frame);
